@@ -13,6 +13,7 @@ xwaifu.o:
 .PHONY: clean install uninstall
 clean:
 	rm -f $(OBJS) xwaifu
+	rm -rf $(HOME)/.local/share/xwaifu
 
 install: xwaifu
 	@echo 'INSTALL xwaifu'

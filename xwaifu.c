@@ -196,6 +196,38 @@ pointer_on_win_rect(void)
 }
 
 void
+create_preset_folder(char *preset_name) {
+	printf("Preset name is: %s\n", preset_name);
+	char *filepath;
+	char *HOME = getenv("HOME");
+	char *command;
+
+	// this is technically not secure
+	asprintf(&filepath, "%s/.local/share/xwaifu/presets/%s", HOME, preset_name);
+	printf("File path is: %s\n", filepath);
+	asprintf(&command, "mkdir -p %s", filepath);
+	system(command);
+}
+
+void
+save_preset_on_folder(char *preset_name, char *config) {
+	char *config_path;
+	char *HOME = getenv("HOME");
+	asprintf(&config_path, "%s/.local/share/xwaifu/presets/%s/config.waifu",
+	HOME, preset_name);
+
+	// creating the config file
+	FILE *config_file = fopen(config_path, "w");
+	if (config_file == NULL)
+		die("Could not create a config file.");
+	
+	fprintf(config_file, "%s", config);
+	fclose(config_file);
+	printf("Preset saved successfully.");
+	exit(EXIT_SUCCESS);
+}
+
+void
 save_pid_on_file(pid_t pid) {
         FILE *running_procs = fopen("running_procs", "a");
         if (running_procs == NULL) {
@@ -276,20 +308,32 @@ run(void)
 	}
 }
 	
-
 int
 main(int argc, char **argv)
 {
 	char *geometry;
 	pid_t child_pid;
+	char *config = "";
 	double alpha = 1;
 	int auto_width = 0;
 	int auto_height = 0;
 	int fade = 0;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "g:a:hrRfk")) != -1) {
+	while ((opt = getopt(argc, argv, "c:g:a:hrRfk")) != -1) {
 		switch (opt) {
+		case 'c':
+			create_preset_folder(optarg);
+			for (int i=0; i<argc; ++i) {
+				if (!strcmp(argv[i], "-c")) {
+					++i;
+					continue;
+				}
+				asprintf(&config, "%s %s", config, argv[i]);
+			}
+			save_preset_on_folder(optarg, config);
+			break;
+
 		case 'g':
 			geometry = optarg;
 			break;
