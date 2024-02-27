@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <signal.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -195,6 +196,72 @@ pointer_on_win_rect(void)
 }
 
 void
+save_pid_on_file(pid_t pid) {
+        FILE *running_procs = fopen("running_procs", "a");
+        if (running_procs == NULL) {
+                die("Could not create a file.");
+        }
+        fprintf(running_procs, "%d", pid);
+        fclose(running_procs);
+}
+
+void
+remove_file(void) {
+        if (remove("running_procs") == 0)
+                exit(EXIT_SUCCESS);
+        else
+                exit(EXIT_FAILURE);
+}
+
+pid_t
+get_file_pid() {
+        FILE *running_procs = fopen("running_procs", "r");
+        if (running_procs == NULL) {
+                die("There is no process running.");
+        }
+        pid_t file_pid;
+        fscanf(running_procs, "%d", &file_pid);
+
+        return file_pid;
+}
+
+void
+run_in_background(void) {
+        pid_t pid = fork();
+        if (pid < 0) {
+                perror("fork");
+                exit(EXIT_FAILURE);
+        }
+        else if (pid > 0) {
+                // printf("Parent process is exiting.\n");
+                save_pid_on_file(pid);
+                exit(EXIT_SUCCESS);
+        }
+        else {
+                if (getsid(0) == getpid()) {
+                        if ((pid = fork()) < 0) {
+                                perror("fork");
+                                exit(EXIT_FAILURE);
+                        }
+                        else if (pid > 0) {
+                                // printf("Child process is exiting");
+                                exit(EXIT_SUCCESS);
+                        }
+                }
+                if (setsid() < 0) {
+                        perror("setsid");
+                        exit(EXIT_FAILURE);
+                }
+
+                // closing file descriptors
+                close(STDIN_FILENO);
+                close(STDOUT_FILENO);
+                close(STDERR_FILENO);
+        }
+}
+
+
+void
 run(void)
 {
 	for (;;) {
@@ -214,13 +281,14 @@ int
 main(int argc, char **argv)
 {
 	char *geometry;
+	pid_t child_pid;
 	double alpha = 1;
 	int auto_width = 0;
 	int auto_height = 0;
 	int fade = 0;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "g:a:hrRf")) != -1) {
+	while ((opt = getopt(argc, argv, "g:a:hrRfk")) != -1) {
 		switch (opt) {
 		case 'g':
 			geometry = optarg;
@@ -241,6 +309,12 @@ main(int argc, char **argv)
 			break;
 		case 'f':
 			fade = 1;
+			break;
+		case 'k':
+			child_pid = get_file_pid();
+			kill(child_pid, SIGTERM);
+			remove_file();
+			exit(EXIT_SUCCESS);
 			break;
 		}
 	}
@@ -267,6 +341,7 @@ main(int argc, char **argv)
 	if (w <= 0 || h <= 0)
 		die("Invalid geometry.");
 
+	run_in_background();
 	create_window();
 	if (fade) {
 		XSelectInput(dpy, win, StructureNotifyMask | EnterWindowMask);
