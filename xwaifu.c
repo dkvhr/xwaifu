@@ -203,10 +203,9 @@ create_preset_folder(char *preset_name) {
 	char *HOME = getenv("HOME");
 	char *command;
 
-	// this is technically not secure
 	asprintf(&filepath, "%s/.local/share/xwaifu/presets/%s", HOME, preset_name);
 	printf("File path is: %s\n", filepath);
-	asprintf(&command, "mkdir -p %s", filepath);
+	asprintf(&command, "mkdir -p \"%s\"", filepath);
 	system(command);
 }
 
