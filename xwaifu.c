@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <signal.h>
+#include <fcntl.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -195,6 +197,114 @@ pointer_on_win_rect(void)
 }
 
 void
+create_preset_folder(char *preset_name) {
+	printf("Preset name is: %s\n", preset_name);
+	char *filepath;
+	char *HOME = getenv("HOME");
+	char *command;
+
+	asprintf(&filepath, "%s/.local/share/xwaifu/presets/%s", HOME, preset_name);
+	printf("File path is: %s\n", filepath);
+	asprintf(&command, "mkdir -p \"%s\"", filepath);
+	system(command);
+}
+
+void
+save_preset_on_folder(char *preset_name, char *config) {
+	char *config_path;
+	char *HOME = getenv("HOME");
+	asprintf(&config_path, "%s/.local/share/xwaifu/presets/%s/config.waifu",
+	HOME, preset_name);
+
+	// creating the config file
+	int fd = open(config_path, O_RDWR | O_CREAT, 0777);
+	FILE *config_file = fdopen(fd, "w");
+	if (config_file == NULL)
+		die("Could not create a config file.");
+	
+	fprintf(config_file, "%s", config);
+	fclose(config_file);
+	printf("Preset saved successfully.\n");
+	exit(EXIT_SUCCESS);
+}
+
+void
+load_preset(char *preset_name) {
+	char *HOME = getenv("HOME");
+	char *command;
+	asprintf(&command, "sh %s/.local/share/xwaifu/presets/%s/config.waifu",
+	HOME, preset_name);
+	system(command);
+	exit(EXIT_SUCCESS);
+}
+
+void
+save_pid_on_file(pid_t pid) {
+        FILE *running_procs = fopen("running_procs", "a");
+        if (running_procs == NULL) {
+                die("Could not create a file.");
+        }
+        fprintf(running_procs, "%d", pid);
+        fclose(running_procs);
+}
+
+void
+remove_file(void) {
+        if (remove("running_procs") == 0)
+                exit(EXIT_SUCCESS);
+        else
+                exit(EXIT_FAILURE);
+}
+
+pid_t
+get_file_pid() {
+        FILE *running_procs = fopen("running_procs", "r");
+        if (running_procs == NULL) {
+                die("There is no process running.");
+        }
+        pid_t file_pid;
+        fscanf(running_procs, "%d", &file_pid);
+
+        return file_pid;
+}
+
+void
+run_in_background(void) {
+        pid_t pid = fork();
+        if (pid < 0) {
+                perror("fork");
+                exit(EXIT_FAILURE);
+        }
+        else if (pid > 0) {
+                // printf("Parent process is exiting.\n");
+                save_pid_on_file(pid);
+                exit(EXIT_SUCCESS);
+        }
+        else {
+                if (getsid(0) == getpid()) {
+                        if ((pid = fork()) < 0) {
+                                perror("fork");
+                                exit(EXIT_FAILURE);
+                        }
+                        else if (pid > 0) {
+                                // printf("Child process is exiting");
+                                exit(EXIT_SUCCESS);
+                        }
+                }
+                if (setsid() < 0) {
+                        perror("setsid");
+                        exit(EXIT_FAILURE);
+                }
+
+                // closing file descriptors
+                close(STDIN_FILENO);
+                close(STDOUT_FILENO);
+                close(STDERR_FILENO);
+        }
+}
+
+
+void
 run(void)
 {
 	for (;;) {
@@ -209,25 +319,41 @@ run(void)
 	}
 }
 	
-
 int
 main(int argc, char **argv)
 {
 	char *geometry;
+	pid_t child_pid;
+	char *config = "";
 	double alpha = 1;
 	int auto_width = 0;
 	int auto_height = 0;
 	int fade = 0;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "g:a:hrRf")) != -1) {
+	while ((opt = getopt(argc, argv, "c:g:a:l:hrRfk")) != -1) {
 		switch (opt) {
+		case 'c':
+			create_preset_folder(optarg);
+			for (int i=0; i<argc; ++i) {
+				if (!strcmp(argv[i], "-c")) {
+					++i;
+					continue;
+				}
+				asprintf(&config, "%s %s", config, argv[i]);
+			}
+			save_preset_on_folder(optarg, config);
+			break;
+
 		case 'g':
 			geometry = optarg;
 			break;
 		case 'a':
 			if (sscanf(optarg, "%lf", &alpha) != 1 || alpha < 0 || alpha > 1)
 				die("Invalid alpha value.");
+			break;
+		case 'l':
+			load_preset(optarg);
 			break;
 		case 'h':
 			print_usage();
@@ -241,6 +367,12 @@ main(int argc, char **argv)
 			break;
 		case 'f':
 			fade = 1;
+			break;
+		case 'k':
+			child_pid = get_file_pid();
+			kill(child_pid, SIGTERM);
+			remove_file();
+			exit(EXIT_SUCCESS);
 			break;
 		}
 	}
@@ -267,6 +399,7 @@ main(int argc, char **argv)
 	if (w <= 0 || h <= 0)
 		die("Invalid geometry.");
 
+	run_in_background();
 	create_window();
 	if (fade) {
 		XSelectInput(dpy, win, StructureNotifyMask | EnterWindowMask);
