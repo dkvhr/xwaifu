@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <signal.h>
+#include <fcntl.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -217,13 +218,24 @@ save_preset_on_folder(char *preset_name, char *config) {
 	HOME, preset_name);
 
 	// creating the config file
-	FILE *config_file = fopen(config_path, "w");
+	int fd = open(config_path, O_RDWR | O_CREAT, 0777);
+	FILE *config_file = fdopen(fd, "w");
 	if (config_file == NULL)
 		die("Could not create a config file.");
 	
 	fprintf(config_file, "%s", config);
 	fclose(config_file);
-	printf("Preset saved successfully.");
+	printf("Preset saved successfully.\n");
+	exit(EXIT_SUCCESS);
+}
+
+void
+load_preset(char *preset_name) {
+	char *HOME = getenv("HOME");
+	char *command;
+	asprintf(&command, "sh %s/.local/share/xwaifu/presets/%s/config.waifu",
+	HOME, preset_name);
+	system(command);
 	exit(EXIT_SUCCESS);
 }
 
@@ -320,7 +332,7 @@ main(int argc, char **argv)
 	int fade = 0;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "c:g:a:hrRfk")) != -1) {
+	while ((opt = getopt(argc, argv, "c:g:a:l:hrRfk")) != -1) {
 		switch (opt) {
 		case 'c':
 			create_preset_folder(optarg);
@@ -340,6 +352,9 @@ main(int argc, char **argv)
 		case 'a':
 			if (sscanf(optarg, "%lf", &alpha) != 1 || alpha < 0 || alpha > 1)
 				die("Invalid alpha value.");
+			break;
+		case 'l':
+			load_preset(optarg);
 			break;
 		case 'h':
 			print_usage();
